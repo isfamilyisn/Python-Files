@@ -7,15 +7,20 @@ pygame.init()
 screen_width = 800
 screen_height = 600
 screen = pygame.display.set_mode((screen_width, screen_height))
-pygame.display.set_caption("Pygame Grid Example")
+pygame.display.set_caption("Chess Board")
 
 # Colors
 WHITE = (255, 255, 255)
 BLACK = (0, 0, 0)
-GRID_COLOR = (100, 100, 100) # A darker grey for grid lines
 
-# Grid parameters
-tile_size = 40
+# Chess board parameters
+board_size = 8  # 8x8 chess board
+tile_size = min(screen_width, screen_height) // 10  # Calculate tile size based on screen
+board_pixel_size = tile_size * board_size  # Total board size in pixels
+
+# Calculate board position to center it
+board_x = (screen_width - board_pixel_size) // 2
+board_y = (screen_height - board_pixel_size) // 2
 
 # Game loop
 running = True
@@ -25,13 +30,23 @@ while running:
             running = False
 
     # Fill background
-    screen.fill(BLACK)
+    screen.fill((50, 50, 50))  # Dark grey background
 
-    # Draw grid lines
-    for x in range(0, screen_width, tile_size):
-        pygame.draw.line(screen, GRID_COLOR, (x, 0), (x, screen_height))
-    for y in range(0, screen_height, tile_size):
-        pygame.draw.line(screen, GRID_COLOR, (0, y), (screen_width, y))
+    # Draw chess board
+    for row in range(board_size):
+        for col in range(board_size):
+            # Alternate colors: if row + col is even, use white; if odd, use black
+            if (row + col) % 2 == 0:
+                tile_color = WHITE
+            else:
+                tile_color = BLACK
+            
+            # Calculate tile position
+            x = board_x + col * tile_size
+            y = board_y + row * tile_size
+            
+            # Draw the tile
+            pygame.draw.rect(screen, tile_color, (x, y, tile_size, tile_size))
 
     # Update display
     pygame.display.flip()
