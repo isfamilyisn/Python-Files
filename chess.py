@@ -185,11 +185,13 @@ def handle_piece_selection(mouse_x, mouse_y):
                 return
             # Check if clicking on a capture move (purple highlight)
             elif (row, col) in capture_moves:
-                # Remove the captured piece
+                # Get and eliminate the captured piece BEFORE moving
                 captured_piece = get_piece_at(row, col)
                 if captured_piece is not None:
-                    pawns.remove(captured_piece)
+                    pawns.remove(captured_piece)  # Remove opponent piece from board
+                # Move the selected piece to the capture position
                 move_piece(selected_piece, row, col)
+                # Clear selection and highlights
                 selected_piece = None
                 valid_moves = []
                 blocked_moves = []
@@ -244,7 +246,7 @@ def setupBoard():
     """setup the board"""
     # Create 8 white pawns on row 6 (rank 2 in chess notation)
     for col in range(8):
-        pawns.append(Pawn('white', 4, col))
+        pawns.append(Pawn('white', 2, col))
 
     # Create 8 black pawns on row 1 (rank 7 in chess notation)
     for col in range(8):
