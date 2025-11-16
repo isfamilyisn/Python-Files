@@ -26,133 +26,257 @@ board_pixel_size = tile_size * board_size  # Total board size in pixels
 board_x = (screen_width - board_pixel_size) // 2
 board_y = (screen_height - board_pixel_size) // 2
 
-# Initialize pawns
-pawns = []
+# Initialize all pieces
+pieces = []  # Changed from pawns to pieces to hold all piece types
 selected_piece = None  # Currently selected piece
 valid_moves = []       # List of (row, col) tuples for valid moves
 blocked_moves = []     # List of (row, col) tuples for blocked moves
 capture_moves = []     # List of (row, col) tuples for capture moves
 
-# Pawn class to represent chess pieces
-class Pawn:
-    def __init__(self, color, row, col):
+# Base Piece class
+class Piece:
+    def __init__(self, color, row, col, piece_type):
         self.color = color  # 'white' or 'black'
         self.row = row
         self.col = col
+        self.piece_type = piece_type  # 'pawn', 'rook', 'knight', 'bishop', 'queen', 'king'
         self.has_moved = False
     
     def draw(self, screen, x, y, size):
-        # Draw a simple circle for the pawn
         center_x = x + size // 2
         center_y = y + size // 2
-        radius = size // 3
         
-        # Draw pawn body
-        pygame.draw.circle(screen, self.color, (center_x, center_y), radius)
-        # Draw outline
-        
-        # Determine pawn color and outline color
+        # Determine piece color and outline color
         if self.color == 'white':
-            pawn_color = WHITE
+            piece_color = WHITE
             outline_color = BLACK
         else:
-            pawn_color = BLACK
+            piece_color = BLACK
             outline_color = WHITE
-
-        # Draw pawn body
-        pygame.draw.circle(screen, pawn_color, (center_x, center_y), radius)
-        # Draw outline
-        pygame.draw.circle(screen, outline_color, (center_x, center_y), radius, 2)
+        
+        # Draw different shapes for different pieces
+        if self.piece_type == 'pawn':
+            radius = size // 3
+            pygame.draw.circle(screen, piece_color, (center_x, center_y), radius)
+            pygame.draw.circle(screen, outline_color, (center_x, center_y), radius, 2)
+        elif self.piece_type == 'rook':
+            # Draw a rectangle
+            rect_size = size // 2
+            pygame.draw.rect(screen, piece_color, (center_x - rect_size//2, center_y - rect_size//2, rect_size, rect_size))
+            pygame.draw.rect(screen, outline_color, (center_x - rect_size//2, center_y - rect_size//2, rect_size, rect_size), 2)
+        elif self.piece_type == 'knight':
+            # Draw a triangle
+            points = [(center_x, center_y - size//3), (center_x - size//3, center_y + size//3), (center_x + size//3, center_y + size//3)]
+            pygame.draw.polygon(screen, piece_color, points)
+            pygame.draw.polygon(screen, outline_color, points, 2)
+        elif self.piece_type == 'bishop':
+            # Draw a diamond
+            points = [(center_x, center_y - size//3), (center_x + size//3, center_y), (center_x, center_y + size//3), (center_x - size//3, center_y)]
+            pygame.draw.polygon(screen, piece_color, points)
+            pygame.draw.polygon(screen, outline_color, points, 2)
+        elif self.piece_type == 'queen':
+            # Draw a circle with a smaller circle on top
+            radius = size // 3
+            pygame.draw.circle(screen, piece_color, (center_x, center_y), radius)
+            pygame.draw.circle(screen, outline_color, (center_x, center_y), radius, 2)
+            # Crown
+            small_radius = size // 6
+            pygame.draw.circle(screen, piece_color, (center_x, center_y - size//4), small_radius)
+            pygame.draw.circle(screen, outline_color, (center_x, center_y - size//4), small_radius, 2)
+        elif self.piece_type == 'king':
+            # Draw a circle with a cross on top
+            radius = size // 3
+            pygame.draw.circle(screen, piece_color, (center_x, center_y), radius)
+            pygame.draw.circle(screen, outline_color, (center_x, center_y), radius, 2)
+            # Cross
+            cross_size = size // 4
+            pygame.draw.line(screen, outline_color, (center_x, center_y - radius), (center_x, center_y - radius - cross_size), 2)
+            pygame.draw.line(screen, outline_color, (center_x - cross_size//2, center_y - radius - cross_size//2), (center_x + cross_size//2, center_y - radius - cross_size//2), 2)
 
 def get_piece_at(row, col):
     """Get the piece at a specific board position"""
-    for pawn in pawns:
-        if pawn.row == row and pawn.col == col:
-            return pawn
+    for piece in pieces:
+        if piece.row == row and piece.col == col:
+            return piece
     return None
 
 def is_valid_board_position(row, col):
     """Check if a position is within board boundaries"""
     return 0 <= row < board_size and 0 <= col < board_size
 
-def get_pawn_possible_moves(pawn):
-    """Calculate all possible moves for a pawn (without checking if blocked)"""
+def get_pawn_moves(piece):
+    """Calculate all possible moves for a pawn"""
     moves = []
-    direction = -1 if pawn.color == 'white' else 1  # White moves up, black moves down
+    direction = -1 if piece.color == 'white' else 1
     
     # Move 1 square forward
-    new_row = pawn.row + direction
-    if is_valid_board_position(new_row, pawn.col):
-        moves.append((new_row, pawn.col))
+    new_row = piece.row + direction
+    if is_valid_board_position(new_row, piece.col):
+        moves.append((new_row, piece.col))
     
     # Move 2 squares forward on first move
-    if not pawn.has_moved:
-        new_row = pawn.row + (2 * direction)
-        if is_valid_board_position(new_row, pawn.col):
-            moves.append((new_row, pawn.col))
+    if not piece.has_moved:
+        new_row = piece.row + (2 * direction)
+        if is_valid_board_position(new_row, piece.col):
+            moves.append((new_row, piece.col))
     
     return moves
 
-def get_pawn_capture_moves(pawn):
-    """Calculate all possible capture moves for a pawn (diagonal)"""
+def get_pawn_capture_moves(piece):
+    """Calculate capture moves for a pawn (diagonal)"""
     moves = []
-    direction = -1 if pawn.color == 'white' else 1  # White moves up, black moves down
+    direction = -1 if piece.color == 'white' else 1
     
-    # Diagonal captures: left and right
     for col_offset in [-1, 1]:
-        new_row = pawn.row + direction
-        new_col = pawn.col + col_offset
+        new_row = piece.row + direction
+        new_col = piece.col + col_offset
         if is_valid_board_position(new_row, new_col):
             moves.append((new_row, new_col))
     
     return moves
 
-def check_moves(pawn):
+def get_rook_moves(piece):
+    """Calculate all possible moves for a rook (horizontal and vertical)"""
+    moves = []
+    # Horizontal moves
+    for col_offset in [-1, 1]:
+        for i in range(1, board_size):
+            new_col = piece.col + (col_offset * i)
+            if not is_valid_board_position(piece.row, new_col):
+                break
+            moves.append((piece.row, new_col))
+            if get_piece_at(piece.row, new_col) is not None:
+                break
+    
+    # Vertical moves
+    for row_offset in [-1, 1]:
+        for i in range(1, board_size):
+            new_row = piece.row + (row_offset * i)
+            if not is_valid_board_position(new_row, piece.col):
+                break
+            moves.append((new_row, piece.col))
+            if get_piece_at(new_row, piece.col) is not None:
+                break
+    
+    return moves
+
+def get_knight_moves(piece):
+    """Calculate all possible moves for a knight (L-shaped)"""
+    moves = []
+    knight_moves = [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
+    
+    for row_offset, col_offset in knight_moves:
+        new_row = piece.row + row_offset
+        new_col = piece.col + col_offset
+        if is_valid_board_position(new_row, new_col):
+            moves.append((new_row, new_col))
+    
+    return moves
+
+def get_bishop_moves(piece):
+    """Calculate all possible moves for a bishop (diagonal)"""
+    moves = []
+    directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+    
+    for row_offset, col_offset in directions:
+        for i in range(1, board_size):
+            new_row = piece.row + (row_offset * i)
+            new_col = piece.col + (col_offset * i)
+            if not is_valid_board_position(new_row, new_col):
+                break
+            moves.append((new_row, new_col))
+            if get_piece_at(new_row, new_col) is not None:
+                break
+    
+    return moves
+
+def get_queen_moves(piece):
+    """Calculate all possible moves for a queen (rook + bishop)"""
+    moves = []
+    moves.extend(get_rook_moves(piece))
+    moves.extend(get_bishop_moves(piece))
+    return moves
+
+def get_king_moves(piece):
+    """Calculate all possible moves for a king (one square in any direction)"""
+    moves = []
+    directions = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+    
+    for row_offset, col_offset in directions:
+        new_row = piece.row + row_offset
+        new_col = piece.col + col_offset
+        if is_valid_board_position(new_row, new_col):
+            moves.append((new_row, new_col))
+    
+    return moves
+
+def check_moves(piece):
     """Check all possible moves and categorize them as valid, blocked, or capture"""
     global valid_moves, blocked_moves, capture_moves
     valid_moves = []
     blocked_moves = []
     capture_moves = []
     
-    # Check forward moves
-    possible_moves = get_pawn_possible_moves(pawn)
-    direction = -1 if pawn.color == 'white' else 1
-    
-    for move_row, move_col in possible_moves:
-        # Check if move is within board boundaries
-        if not is_valid_board_position(move_row, move_col):
-            blocked_moves.append((move_row, move_col))
-            continue
+    # Get possible moves based on piece type
+    if piece.piece_type == 'pawn':
+        possible_moves = get_pawn_moves(piece)
+        direction = -1 if piece.color == 'white' else 1
         
-        # Check if there's a piece blocking the path
-        # For 2-square move, check both squares
-        if abs(move_row - pawn.row) == 2:
-            # Check intermediate square
-            intermediate_row = pawn.row + direction
-            if get_piece_at(intermediate_row, move_col) is not None:
+        for move_row, move_col in possible_moves:
+            if not is_valid_board_position(move_row, move_col):
                 blocked_moves.append((move_row, move_col))
                 continue
+            
+            # Check if there's a piece blocking the path (for 2-square move)
+            if abs(move_row - piece.row) == 2:
+                intermediate_row = piece.row + direction
+                if get_piece_at(intermediate_row, move_col) is not None:
+                    blocked_moves.append((move_row, move_col))
+                    continue
+            
+            piece_at_dest = get_piece_at(move_row, move_col)
+            if piece_at_dest is not None:
+                blocked_moves.append((move_row, move_col))
+            else:
+                valid_moves.append((move_row, move_col))
         
-        # Check destination square
-        piece_at_dest = get_piece_at(move_row, move_col)
-        if piece_at_dest is not None:
-            blocked_moves.append((move_row, move_col))
-        else:
-            valid_moves.append((move_row, move_col))
+        # Check capture moves for pawn
+        capture_positions = get_pawn_capture_moves(piece)
+        for move_row, move_col in capture_positions:
+            piece_at_dest = get_piece_at(move_row, move_col)
+            if piece_at_dest is not None and piece_at_dest.color != piece.color:
+                capture_moves.append((move_row, move_col))
     
-    # Check capture moves (diagonal)
-    capture_positions = get_pawn_capture_moves(pawn)
-    for move_row, move_col in capture_positions:
-        piece_at_dest = get_piece_at(move_row, move_col)
-        if piece_at_dest is not None and piece_at_dest.color != pawn.color:
-            # There's an opponent piece that can be captured
-            capture_moves.append((move_row, move_col))
-        # If no piece or same color piece, don't highlight (not a valid capture)
-
+    else:
+        # For other pieces, get their moves
+        if piece.piece_type == 'rook':
+            possible_moves = get_rook_moves(piece)
+        elif piece.piece_type == 'knight':
+            possible_moves = get_knight_moves(piece)
+        elif piece.piece_type == 'bishop':
+            possible_moves = get_bishop_moves(piece)
+        elif piece.piece_type == 'queen':
+            possible_moves = get_queen_moves(piece)
+        elif piece.piece_type == 'king':
+            possible_moves = get_king_moves(piece)
+        else:
+            possible_moves = []
+        
+        for move_row, move_col in possible_moves:
+            if not is_valid_board_position(move_row, move_col):
+                blocked_moves.append((move_row, move_col))
+                continue
+            
+            piece_at_dest = get_piece_at(move_row, move_col)
+            if piece_at_dest is None:
+                valid_moves.append((move_row, move_col))
+            elif piece_at_dest.color != piece.color:
+                capture_moves.append((move_row, move_col))
+            else:
+                blocked_moves.append((move_row, move_col))
 
 def get_board_position_from_mouse(mouse_x, mouse_y):
     """Convert mouse coordinates to board row and column"""
-    # Check if click is within board boundaries
     if (board_x <= mouse_x < board_x + board_pixel_size and
         board_y <= mouse_y < board_y + board_pixel_size):
         col = (mouse_x - board_x) // tile_size
@@ -173,9 +297,7 @@ def handle_piece_selection(mouse_x, mouse_y):
     row, col = get_board_position_from_mouse(mouse_x, mouse_y)
     
     if row is not None and col is not None:
-        # If a piece is already selected, check if clicking on a valid move
         if selected_piece is not None:
-            # Check if clicking on a valid move (green highlight)
             if (row, col) in valid_moves:
                 move_piece(selected_piece, row, col)
                 selected_piece = None
@@ -183,28 +305,22 @@ def handle_piece_selection(mouse_x, mouse_y):
                 blocked_moves = []
                 capture_moves = []
                 return
-            # Check if clicking on a capture move (purple highlight)
             elif (row, col) in capture_moves:
-                # Get and eliminate the captured piece BEFORE moving
                 captured_piece = get_piece_at(row, col)
                 if captured_piece is not None:
-                    pawns.remove(captured_piece)  # Remove opponent piece from board
-                # Move the selected piece to the capture position
+                    pieces.remove(captured_piece)
                 move_piece(selected_piece, row, col)
-                # Clear selection and highlights
                 selected_piece = None
                 valid_moves = []
                 blocked_moves = []
                 capture_moves = []
                 return
         
-        # Handle piece selection or deselection
         piece = get_piece_at(row, col)
         if piece is not None:
             selected_piece = piece
             check_moves(selected_piece)
         else:
-            # Clicked on empty square - deselect
             selected_piece = None
             valid_moves = []
             blocked_moves = []
@@ -212,52 +328,70 @@ def handle_piece_selection(mouse_x, mouse_y):
 
 def draw_highlights(screen):
     """Draw green highlights for valid moves, red for blocked moves, and purple for capture moves"""
-    # Draw valid moves in green
     for row, col in valid_moves:
         x = board_x + col * tile_size
         y = board_y + row * tile_size
-        # Create a semi-transparent green surface
         highlight = pygame.Surface((tile_size, tile_size))
         highlight.set_alpha(HIGHLIGHT_ALPHA)
         highlight.fill(GREEN)
         screen.blit(highlight, (x, y))
     
-    # Draw blocked moves in red
     for row, col in blocked_moves:
         x = board_x + col * tile_size
         y = board_y + row * tile_size
-        # Create a semi-transparent red surface
         highlight = pygame.Surface((tile_size, tile_size))
         highlight.set_alpha(HIGHLIGHT_ALPHA)
         highlight.fill(RED)
         screen.blit(highlight, (x, y))
     
-    # Draw capture moves in purple
     for row, col in capture_moves:
         x = board_x + col * tile_size
         y = board_y + row * tile_size
-        # Create a semi-transparent purple surface
         highlight = pygame.Surface((tile_size, tile_size))
         highlight.set_alpha(HIGHLIGHT_ALPHA)
         highlight.fill(PURPLE)
         screen.blit(highlight, (x, y))
 
 def setupBoard():
-    """setup the board"""
-    # Create 8 white pawns on row 6 (rank 2 in chess notation)
+    """Setup the board with all pieces in starting positions"""
+    pieces.clear()
+    
+    # White pieces (bottom, rows 6-7)
+    # Pawns (row 6)
     for col in range(8):
-        pawns.append(Pawn('white', 2, col))
-
-    # Create 8 black pawns on row 1 (rank 7 in chess notation)
+        pieces.append(Piece('white', 6, col, 'pawn'))
+    
+    # Back row (row 7)
+    pieces.append(Piece('white', 7, 0, 'rook'))
+    pieces.append(Piece('white', 7, 1, 'knight'))
+    pieces.append(Piece('white', 7, 2, 'bishop'))
+    pieces.append(Piece('white', 7, 3, 'queen'))
+    pieces.append(Piece('white', 7, 4, 'king'))
+    pieces.append(Piece('white', 7, 5, 'bishop'))
+    pieces.append(Piece('white', 7, 6, 'knight'))
+    pieces.append(Piece('white', 7, 7, 'rook'))
+    
+    # Black pieces (top, rows 0-1)
+    # Pawns (row 1)
     for col in range(8):
-        pawns.append(Pawn('black', 1, col))
+        pieces.append(Piece('black', 1, col, 'pawn'))
+    
+    # Back row (row 0)
+    pieces.append(Piece('black', 0, 0, 'rook'))
+    pieces.append(Piece('black', 0, 1, 'knight'))
+    pieces.append(Piece('black', 0, 2, 'bishop'))
+    pieces.append(Piece('black', 0, 3, 'queen'))
+    pieces.append(Piece('black', 0, 4, 'king'))
+    pieces.append(Piece('black', 0, 5, 'bishop'))
+    pieces.append(Piece('black', 0, 6, 'knight'))
+    pieces.append(Piece('black', 0, 7, 'rook'))
 
-def draw_all_pawns(screen, pawns_list, board_x, board_y, tile_size):
-    """Draw all pawns on the board"""
-    for pawn in pawns_list:
-        x = board_x + pawn.col * tile_size
-        y = board_y + pawn.row * tile_size
-        pawn.draw(screen, x, y, tile_size)
+def draw_all_pieces(screen, pieces_list, board_x, board_y, tile_size):
+    """Draw all pieces on the board"""
+    for piece in pieces_list:
+        x = board_x + piece.col * tile_size
+        y = board_y + piece.row * tile_size
+        piece.draw(screen, x, y, tile_size)
 
 # Game loop
 setupBoard()
@@ -267,37 +401,31 @@ while running:
         if event.type == pygame.QUIT:
             running = False
         elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:  # Left mouse button
+            if event.button == 1:
                 mouse_x, mouse_y = event.pos
                 handle_piece_selection(mouse_x, mouse_y)
 
-    # Fill background
-    screen.fill((50, 50, 50))  # Dark grey background
+    screen.fill((50, 50, 50))
 
     # Draw chess board
     for row in range(board_size):
         for col in range(board_size):
-            # Alternate colors: if row + col is even, use white; if odd, use black
             if (row + col) % 2 == 0:
                 tile_color = WHITE
             else:
                 tile_color = BLACK
             
-            # Calculate tile position
             x = board_x + col * tile_size
             y = board_y + row * tile_size
-            
-            # Draw the tile
             pygame.draw.rect(screen, tile_color, (x, y, tile_size, tile_size))
 
-    # Draw highlights for selected piece
+    # Draw highlights
     if selected_piece is not None:
         draw_highlights(screen)
 
-    # Draw pawns
-    draw_all_pawns(screen, pawns, board_x, board_y, tile_size)
+    # Draw all pieces
+    draw_all_pieces(screen, pieces, board_x, board_y, tile_size)
 
-    # Update display
     pygame.display.flip()
 
 pygame.quit()
