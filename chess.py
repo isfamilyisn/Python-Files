@@ -160,12 +160,43 @@ def get_board_position_from_mouse(mouse_x, mouse_y):
         return row, col
     return None, None
 
+def move_piece(piece, new_row, new_col):
+    """Move a piece to a new position"""
+    piece.row = new_row
+    piece.col = new_col
+    if not piece.has_moved:
+        piece.has_moved = True
+
 def handle_piece_selection(mouse_x, mouse_y):
-    """Handle clicking on a piece to select it"""
-    global selected_piece
+    """Handle clicking on a piece to select it, or moving to a valid square"""
+    global selected_piece, valid_moves, blocked_moves, capture_moves
     row, col = get_board_position_from_mouse(mouse_x, mouse_y)
     
     if row is not None and col is not None:
+        # If a piece is already selected, check if clicking on a valid move
+        if selected_piece is not None:
+            # Check if clicking on a valid move (green highlight)
+            if (row, col) in valid_moves:
+                move_piece(selected_piece, row, col)
+                selected_piece = None
+                valid_moves = []
+                blocked_moves = []
+                capture_moves = []
+                return
+            # Check if clicking on a capture move (purple highlight)
+            elif (row, col) in capture_moves:
+                # Remove the captured piece
+                captured_piece = get_piece_at(row, col)
+                if captured_piece is not None:
+                    pawns.remove(captured_piece)
+                move_piece(selected_piece, row, col)
+                selected_piece = None
+                valid_moves = []
+                blocked_moves = []
+                capture_moves = []
+                return
+        
+        # Handle piece selection or deselection
         piece = get_piece_at(row, col)
         if piece is not None:
             selected_piece = piece
@@ -175,6 +206,7 @@ def handle_piece_selection(mouse_x, mouse_y):
             selected_piece = None
             valid_moves = []
             blocked_moves = []
+            capture_moves = []
 
 def draw_highlights(screen):
     """Draw green highlights for valid moves, red for blocked moves, and purple for capture moves"""
@@ -212,7 +244,7 @@ def setupBoard():
     """setup the board"""
     # Create 8 white pawns on row 6 (rank 2 in chess notation)
     for col in range(8):
-        pawns.append(Pawn('white', 2, col))
+        pawns.append(Pawn('white', 4, col))
 
     # Create 8 black pawns on row 1 (rank 7 in chess notation)
     for col in range(8):
