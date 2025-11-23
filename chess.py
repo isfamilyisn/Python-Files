@@ -220,45 +220,64 @@ def get_king_position(color):
     return None
 
 def is_square_under_attack(row, col, attacking_color):
-    """Check if a square is under attack by any piece of the attacking color"""
-    # Temporarily remove the piece at (row, col) if it's an attacking piece's king
-    # to prevent infinite recursion or incorrect check for king moves
-    original_piece_at_target = get_piece_at(row, col)
-    if original_piece_at_target and original_piece_at_target.piece_type == 'king' and original_piece_at_target.color == attacking_color:
-        pieces.remove(original_piece_at_target)
-        
-    under_attack = False
-    for piece in pieces:
-        if piece.color == attacking_color:
-            # For pawns, we only care about capture moves for attacking
-            if piece.piece_type == 'pawn':
-                potential_attacks = get_pawn_capture_moves(piece)
-            # For kings, we need to be careful not to check if the king can move into check
-            # For this function, we just need to know if any piece *can* attack the square
-            elif piece.piece_type == 'king':
-                potential_attacks = get_king_moves(piece)
-            else:
-                # For other pieces, their regular moves are also their attack moves
-                if piece.piece_type == 'rook':
-                    potential_attacks = get_rook_moves(piece)
-                elif piece.piece_type == 'knight':
-                    potential_attacks = get_knight_moves(piece)
-                elif piece.piece_type == 'bishop':
-                    potential_attacks = get_bishop_moves(piece)
-                elif piece.piece_type == 'queen':
-                    potential_attacks = get_queen_moves(piece)
-                else:
-                    potential_attacks = [] # Should not happen
-            
-            if (row, col) in potential_attacks:
-                under_attack = True
-                break
+    """Check if a square is under attack by any piece of the attacking color (Optimized)"""
     
-    # Restore the piece if it was temporarily removed
-    if original_piece_at_target:
-        pieces.append(original_piece_at_target)
+    # Directions for straight line attacks (Rook, Queen)
+    straight_directions = [(-1, 0), (1, 0), (0, -1), (0, 1)]
+    for d_row, d_col in straight_directions:
+        for i in range(1, board_size):
+            check_row, check_col = row + d_row * i, col + d_col * i
+            if not is_valid_board_position(check_row, check_col):
+                break
+            piece = get_piece_at(check_row, check_col)
+            if piece:
+                if piece.color == attacking_color and (piece.piece_type == 'rook' or piece.piece_type == 'queen'):
+                    return True
+                break # Blocked by any piece
 
-    return under_attack
+    # Directions for diagonal attacks (Bishop, Queen)
+    diagonal_directions = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+    for d_row, d_col in diagonal_directions:
+        for i in range(1, board_size):
+            check_row, check_col = row + d_row * i, col + d_col * i
+            if not is_valid_board_position(check_row, check_col):
+                break
+            piece = get_piece_at(check_row, check_col)
+            if piece:
+                if piece.color == attacking_color and (piece.piece_type == 'bishop' or piece.piece_type == 'queen'):
+                    return True
+                break # Blocked by any piece
+
+    # Knight attacks
+    knight_moves = [(-2, -1), (-2, 1), (-1, -2), (-1, 2), (1, -2), (1, 2), (2, -1), (2, 1)]
+    for d_row, d_col in knight_moves:
+        check_row, check_col = row + d_row, col + d_col
+        if is_valid_board_position(check_row, check_col):
+            piece = get_piece_at(check_row, check_col)
+            if piece and piece.color == attacking_color and piece.piece_type == 'knight':
+                return True
+
+    # Pawn attacks
+    # If attacking color is white, they attack from row+1 (since they move -1)
+    # If attacking color is black, they attack from row-1 (since they move +1)
+    pawn_row_offset = 1 if attacking_color == 'white' else -1
+    for col_offset in [-1, 1]:
+        check_row, check_col = row + pawn_row_offset, col + col_offset
+        if is_valid_board_position(check_row, check_col):
+            piece = get_piece_at(check_row, check_col)
+            if piece and piece.color == attacking_color and piece.piece_type == 'pawn':
+                return True
+
+    # King attacks (adjacent squares)
+    king_moves = [(-1, -1), (-1, 0), (-1, 1), (0, -1), (0, 1), (1, -1), (1, 0), (1, 1)]
+    for d_row, d_col in king_moves:
+        check_row, check_col = row + d_row, col + d_col
+        if is_valid_board_position(check_row, check_col):
+            piece = get_piece_at(check_row, check_col)
+            if piece and piece.color == attacking_color and piece.piece_type == 'king':
+                return True
+
+    return False
 
 def is_in_check(color):
     """Check if the king of the given color is in check"""
@@ -429,6 +448,7 @@ def handle_piece_selection(mouse_x, mouse_y):
                 blocked_moves = []
                 capture_moves = []
                 current_turn = 'white' if current_turn == 'black' else 'black'
+                check_game_over()
                 return
             elif (row, col) in capture_moves:
                 captured_piece = get_piece_at(row, col)
@@ -440,6 +460,7 @@ def handle_piece_selection(mouse_x, mouse_y):
                 blocked_moves = []
                 capture_moves = []
                 current_turn = 'white' if current_turn == 'black' else 'black'
+                check_game_over()
                 return
         
         piece = get_piece_at(row, col)
@@ -561,6 +582,17 @@ def draw_selection_screen(screen):
     
     return white_btn_rect, black_btn_rect
 
+def check_game_over():
+    """Check if the game is over (checkmate or stalemate)"""
+    global game_state, winner
+    
+    if not has_legal_moves(current_turn):
+        if is_in_check(current_turn):
+            winner = 'white' if current_turn == 'black' else 'black'
+        else:
+            winner = 'draw' # Stalemate
+        game_state = 'GAME_OVER'
+
 def make_ai_move(color):
     """Make a random valid move for the AI"""
     global current_turn, selected_piece, valid_moves, blocked_moves, capture_moves
@@ -604,6 +636,9 @@ def make_ai_move(color):
         
         # Switch turn
         current_turn = 'white' if current_turn == 'black' else 'black'
+        
+        # Check for game over after AI move
+        check_game_over()
 
 def draw_game_over_screen(screen, winner):
     """Draw the game over screen"""
@@ -670,19 +705,10 @@ while running:
         draw_selection_screen(screen)
     
     elif game_state == 'PLAYING':
-        # Check for Game Over
-        if not has_legal_moves(current_turn):
-            if is_in_check(current_turn):
-                winner = 'white' if current_turn == 'black' else 'black'
-            else:
-                winner = 'draw' # Stalemate
-            game_state = 'GAME_OVER'
-        
-        else:
-            # AI Turn
-            if current_turn == ai_color:
-                pygame.time.wait(500) # Small delay for better UX
-                make_ai_move(ai_color)
+        # AI Turn
+        if current_turn == ai_color:
+            pygame.time.wait(500) # Small delay for better UX
+            make_ai_move(ai_color)
 
         screen.fill((50, 50, 50))
 
