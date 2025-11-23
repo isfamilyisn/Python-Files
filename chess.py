@@ -206,9 +206,92 @@ def get_king_moves(piece):
         new_row = piece.row + row_offset
         new_col = piece.col + col_offset
         if is_valid_board_position(new_row, new_col):
-            moves.append((new_row, new_col))
+            target_piece = get_piece_at(new_row, new_col)
+            if target_piece is None or target_piece.color != piece.color:
+                moves.append((new_row, new_col))
     
     return moves
+
+def get_king_position(color):
+    """Find the position of the king of the given color"""
+    for piece in pieces:
+        if piece.piece_type == 'king' and piece.color == color:
+            return piece.row, piece.col
+    return None
+
+def is_square_under_attack(row, col, attacking_color):
+    """Check if a square is under attack by any piece of the attacking color"""
+    # Temporarily remove the piece at (row, col) if it's an attacking piece's king
+    # to prevent infinite recursion or incorrect check for king moves
+    original_piece_at_target = get_piece_at(row, col)
+    if original_piece_at_target and original_piece_at_target.piece_type == 'king' and original_piece_at_target.color == attacking_color:
+        pieces.remove(original_piece_at_target)
+        
+    under_attack = False
+    for piece in pieces:
+        if piece.color == attacking_color:
+            # For pawns, we only care about capture moves for attacking
+            if piece.piece_type == 'pawn':
+                potential_attacks = get_pawn_capture_moves(piece)
+            # For kings, we need to be careful not to check if the king can move into check
+            # For this function, we just need to know if any piece *can* attack the square
+            elif piece.piece_type == 'king':
+                potential_attacks = get_king_moves(piece)
+            else:
+                # For other pieces, their regular moves are also their attack moves
+                if piece.piece_type == 'rook':
+                    potential_attacks = get_rook_moves(piece)
+                elif piece.piece_type == 'knight':
+                    potential_attacks = get_knight_moves(piece)
+                elif piece.piece_type == 'bishop':
+                    potential_attacks = get_bishop_moves(piece)
+                elif piece.piece_type == 'queen':
+                    potential_attacks = get_queen_moves(piece)
+                else:
+                    potential_attacks = [] # Should not happen
+            
+            if (row, col) in potential_attacks:
+                under_attack = True
+                break
+    
+    # Restore the piece if it was temporarily removed
+    if original_piece_at_target:
+        pieces.append(original_piece_at_target)
+
+    return under_attack
+
+def is_in_check(color):
+    """Check if the king of the given color is in check"""
+    king_pos = get_king_position(color)
+    if king_pos is None:
+        return False # King not on board (shouldn't happen in normal play)
+    
+    attacking_color = 'black' if color == 'white' else 'white'
+    return is_square_under_attack(king_pos[0], king_pos[1], attacking_color)
+
+def simulate_move(piece, move_row, move_col):
+    """Simulate a move to check if it results in check for the current player"""
+    original_row, original_col = piece.row, piece.col
+    
+    # Store state of captured piece
+    captured_piece = get_piece_at(move_row, move_col)
+    if captured_piece:
+        pieces.remove(captured_piece)
+    
+    # Make the move
+    piece.row = move_row
+    piece.col = move_col
+    
+    # Check if king is in check after the move
+    in_check = is_in_check(piece.color)
+    
+    # Undo the move
+    piece.row = original_row
+    piece.col = original_col
+    if captured_piece:
+        pieces.append(captured_piece)
+        
+    return in_check
 
 def check_moves(piece):
     """Check all possible moves and categorize them as valid, blocked, or capture"""
@@ -219,33 +302,29 @@ def check_moves(piece):
     
     # Get possible moves based on piece type
     if piece.piece_type == 'pawn':
-        possible_moves = get_pawn_moves(piece)
-        direction = -1 if piece.color == 'white' else 1
-        
-        for move_row, move_col in possible_moves:
-            if not is_valid_board_position(move_row, move_col):
-                blocked_moves.append((move_row, move_col))
-                continue
-            
-            # Check if there's a piece blocking the path (for 2-square move)
-            if abs(move_row - piece.row) == 2:
-                intermediate_row = piece.row + direction
-                if get_piece_at(intermediate_row, move_col) is not None:
-                    blocked_moves.append((move_row, move_col))
-                    continue
-            
-            piece_at_dest = get_piece_at(move_row, move_col)
-            if piece_at_dest is not None:
-                blocked_moves.append((move_row, move_col))
-            else:
+        # Pawn forward moves
+        possible_forward_moves = get_pawn_moves(piece)
+        for move_row, move_col in possible_forward_moves:
+            if not simulate_move(piece, move_row, move_col):
                 valid_moves.append((move_row, move_col))
+            else:
+                blocked_moves.append((move_row, move_col))
         
         # Check capture moves for pawn
         capture_positions = get_pawn_capture_moves(piece)
         for move_row, move_col in capture_positions:
             piece_at_dest = get_piece_at(move_row, move_col)
             if piece_at_dest is not None and piece_at_dest.color != piece.color:
-                capture_moves.append((move_row, move_col))
+                if not simulate_move(piece, move_row, move_col):
+                    capture_moves.append((move_row, move_col))
+            else:
+                # If there's no piece or it's own piece, it's not a valid capture
+                # but we might still want to mark it as blocked if it's a potential attack square
+                # For now, we only add to capture_moves if it's a valid capture.
+                # If it's an empty square, it's not a valid pawn move or capture.
+                # If it's own piece, it's blocked.
+                if piece_at_dest is not None and piece_at_dest.color == piece.color:
+                    blocked_moves.append((move_row, move_col))
     
     else:
         # For other pieces, get their moves
@@ -264,16 +343,47 @@ def check_moves(piece):
         
         for move_row, move_col in possible_moves:
             if not is_valid_board_position(move_row, move_col):
+                # This case should ideally be handled by the get_*_moves functions
+                # but as a safeguard, mark as blocked.
                 blocked_moves.append((move_row, move_col))
                 continue
             
             piece_at_dest = get_piece_at(move_row, move_col)
             if piece_at_dest is None:
-                valid_moves.append((move_row, move_col))
+                if not simulate_move(piece, move_row, move_col):
+                    valid_moves.append((move_row, move_col))
+                else:
+                    blocked_moves.append((move_row, move_col))
             elif piece_at_dest.color != piece.color:
-                capture_moves.append((move_row, move_col))
+                if not simulate_move(piece, move_row, move_col):
+                    capture_moves.append((move_row, move_col))
+                else:
+                    blocked_moves.append((move_row, move_col))
             else:
                 blocked_moves.append((move_row, move_col))
+
+def has_legal_moves(color):
+    """Check if the player has any legal moves"""
+    global valid_moves, blocked_moves, capture_moves
+    for piece in pieces:
+        if piece.color == color:
+            # Temporarily store current global move lists
+            temp_valid_moves = list(valid_moves)
+            temp_blocked_moves = list(blocked_moves)
+            temp_capture_moves = list(capture_moves)
+
+            check_moves(piece)
+            
+            # Restore global move lists
+            current_piece_valid_moves = list(valid_moves)
+            current_piece_capture_moves = list(capture_moves)
+            valid_moves = temp_valid_moves
+            blocked_moves = temp_blocked_moves
+            capture_moves = temp_capture_moves
+
+            if current_piece_valid_moves or current_piece_capture_moves:
+                return True
+    return False
 
 def get_visual_coords(row, col):
     """Transform logical coordinates to visual coordinates based on player color"""
@@ -302,7 +412,12 @@ def move_piece(piece, new_row, new_col):
 
 def handle_piece_selection(mouse_x, mouse_y):
     """Handle clicking on a piece to select it, or moving to a valid square"""
-    global selected_piece, valid_moves, blocked_moves, capture_moves
+    global selected_piece, valid_moves, blocked_moves, capture_moves, current_turn, game_state, winner
+    
+    # Only allow interaction if it's the player's turn
+    if current_turn != player_color:
+        return
+
     row, col = get_board_position_from_mouse(mouse_x, mouse_y)
     
     if row is not None and col is not None:
@@ -313,6 +428,7 @@ def handle_piece_selection(mouse_x, mouse_y):
                 valid_moves = []
                 blocked_moves = []
                 capture_moves = []
+                current_turn = 'white' if current_turn == 'black' else 'black'
                 return
             elif (row, col) in capture_moves:
                 captured_piece = get_piece_at(row, col)
@@ -323,12 +439,15 @@ def handle_piece_selection(mouse_x, mouse_y):
                 valid_moves = []
                 blocked_moves = []
                 capture_moves = []
+                current_turn = 'white' if current_turn == 'black' else 'black'
                 return
         
         piece = get_piece_at(row, col)
         if piece is not None:
-            selected_piece = piece
-            check_moves(selected_piece)
+            # Only allow selecting own pieces
+            if piece.color == player_color:
+                selected_piece = piece
+                check_moves(selected_piece)
         else:
             selected_piece = None
             valid_moves = []
@@ -413,10 +532,11 @@ import random
 # Game loop
 setupBoard()
 running = True
-game_state = 'MENU' # 'MENU' or 'PLAYING'
+game_state = 'MENU' # 'MENU', 'PLAYING', 'GAME_OVER'
 player_color = None # 'white' or 'black'
 ai_color = None
 current_turn = 'white'
+winner = None # 'white', 'black', or 'draw'
 
 def draw_selection_screen(screen):
     # ... (existing code)
@@ -443,82 +563,69 @@ def draw_selection_screen(screen):
 
 def make_ai_move(color):
     """Make a random valid move for the AI"""
-    global current_turn
+    global current_turn, selected_piece, valid_moves, blocked_moves, capture_moves
     
     # Get all pieces for the AI
     ai_pieces = [p for p in pieces if p.color == color]
-    possible_moves = []
+    possible_moves_for_ai = []
     
     for piece in ai_pieces:
+        # Temporarily set selected_piece to current AI piece to get its moves
+        selected_piece = piece
         check_moves(piece)
+        
         # Add valid moves
         for move in valid_moves:
-            possible_moves.append((piece, move, 'move'))
+            possible_moves_for_ai.append((piece, move, 'move'))
         # Add capture moves
         for move in capture_moves:
-            possible_moves.append((piece, move, 'capture'))
+            possible_moves_for_ai.append((piece, move, 'capture'))
             
-    if possible_moves:
+    # Clear selected_piece and move lists after checking all AI pieces
+    selected_piece = None
+    valid_moves = []
+    blocked_moves = []
+    capture_moves = []
+
+    if possible_moves_for_ai:
         # Prioritize captures (simple intelligence)
-        captures = [m for m in possible_moves if m[2] == 'capture']
+        captures = [m for m in possible_moves_for_ai if m[2] == 'capture']
         if captures:
-            piece, (row, col), move_type = random.choice(captures)
+            piece_to_move, (row, col), move_type = random.choice(captures)
         else:
-            piece, (row, col), move_type = random.choice(possible_moves)
+            piece_to_move, (row, col), move_type = random.choice(possible_moves_for_ai)
             
         if move_type == 'capture':
             captured_piece = get_piece_at(row, col)
             if captured_piece:
                 pieces.remove(captured_piece)
         
-        move_piece(piece, row, col)
+        move_piece(piece_to_move, row, col)
         
         # Switch turn
         current_turn = 'white' if current_turn == 'black' else 'black'
 
-def handle_piece_selection(mouse_x, mouse_y):
-    """Handle clicking on a piece to select it, or moving to a valid square"""
-    global selected_piece, valid_moves, blocked_moves, capture_moves, current_turn
+def draw_game_over_screen(screen, winner):
+    """Draw the game over screen"""
+    overlay = pygame.Surface((screen_width, screen_height))
+    overlay.set_alpha(200)
+    overlay.fill(BLACK)
+    screen.blit(overlay, (0, 0))
     
-    # Only allow interaction if it's the player's turn
-    if current_turn != player_color:
-        return
-
-    row, col = get_board_position_from_mouse(mouse_x, mouse_y)
-    
-    if row is not None and col is not None:
-        if selected_piece is not None:
-            if (row, col) in valid_moves:
-                move_piece(selected_piece, row, col)
-                selected_piece = None
-                valid_moves = []
-                blocked_moves = []
-                capture_moves = []
-                current_turn = 'white' if current_turn == 'black' else 'black'
-                return
-            elif (row, col) in capture_moves:
-                captured_piece = get_piece_at(row, col)
-                if captured_piece is not None:
-                    pieces.remove(captured_piece)
-                move_piece(selected_piece, row, col)
-                selected_piece = None
-                valid_moves = []
-                blocked_moves = []
-                capture_moves = []
-                current_turn = 'white' if current_turn == 'black' else 'black'
-                return
+    font = pygame.font.SysFont(None, 64)
+    if winner == 'draw':
+        text = "Stalemate! It's a Draw"
+        color = WHITE
+    else:
+        text = f"Checkmate! {winner.capitalize()} Wins"
+        color = GREEN if winner == player_color else RED
         
-        piece = get_piece_at(row, col)
-        if piece is not None:
-            # Only allow selecting own pieces
-            if piece.color == player_color:
-                selected_piece = piece
-                check_moves(selected_piece)
-        else:
-            selected_piece = None
-            valid_moves = []
-            blocked_moves = []
-            capture_moves = []
+    text_surface = font.render(text, True, color)
+    screen.blit(text_surface, (screen_width // 2 - text_surface.get_width() // 2, screen_height // 2 - text_surface.get_height() // 2))
+    
+    small_font = pygame.font.SysFont(None, 32)
+    restart_text = small_font.render("Press SPACE to Restart", True, WHITE)
+    screen.blit(restart_text, (screen_width // 2 - restart_text.get_width() // 2, screen_height // 2 + 50))
 
 while running:
     for event in pygame.event.get():
@@ -546,15 +653,36 @@ while running:
                 
                 elif game_state == 'PLAYING':
                     handle_piece_selection(mouse_x, mouse_y)
+        
+        elif event.type == pygame.KEYDOWN:
+            if game_state == 'GAME_OVER':
+                if event.key == pygame.K_SPACE:
+                    setupBoard()
+                    game_state = 'MENU'
+                    current_turn = 'white'
+                    winner = None
+                    selected_piece = None
+                    valid_moves = []
+                    blocked_moves = []
+                    capture_moves = []
 
     if game_state == 'MENU':
         draw_selection_screen(screen)
     
     elif game_state == 'PLAYING':
-        # AI Turn
-        if current_turn == ai_color:
-            pygame.time.wait(500) # Small delay for better UX
-            make_ai_move(ai_color)
+        # Check for Game Over
+        if not has_legal_moves(current_turn):
+            if is_in_check(current_turn):
+                winner = 'white' if current_turn == 'black' else 'black'
+            else:
+                winner = 'draw' # Stalemate
+            game_state = 'GAME_OVER'
+        
+        else:
+            # AI Turn
+            if current_turn == ai_color:
+                pygame.time.wait(500) # Small delay for better UX
+                make_ai_move(ai_color)
 
         screen.fill((50, 50, 50))
 
@@ -581,6 +709,23 @@ while running:
 
         # Draw all pieces
         draw_all_pieces(screen, pieces, board_x, board_y, tile_size)
+    
+    elif game_state == 'GAME_OVER':
+        # Draw board in background
+        screen.fill((50, 50, 50))
+        for row in range(board_size):
+            for col in range(board_size):
+                vis_row, vis_col = get_visual_coords(row, col)
+                if (row + col) % 2 == 0:
+                    tile_color = WHITE
+                else:
+                    tile_color = BLACK
+                x = board_x + vis_col * tile_size
+                y = board_y + vis_row * tile_size
+                pygame.draw.rect(screen, tile_color, (x, y, tile_size, tile_size))
+        draw_all_pieces(screen, pieces, board_x, board_y, tile_size)
+        
+        draw_game_over_screen(screen, winner)
 
     pygame.display.flip()
 
