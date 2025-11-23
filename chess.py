@@ -275,12 +275,21 @@ def check_moves(piece):
             else:
                 blocked_moves.append((move_row, move_col))
 
+def get_visual_coords(row, col):
+    """Transform logical coordinates to visual coordinates based on player color"""
+    if player_color == 'black':
+        return 7 - row, 7 - col
+    return row, col
+
 def get_board_position_from_mouse(mouse_x, mouse_y):
     """Convert mouse coordinates to board row and column"""
     if (board_x <= mouse_x < board_x + board_pixel_size and
         board_y <= mouse_y < board_y + board_pixel_size):
         col = (mouse_x - board_x) // tile_size
         row = (mouse_y - board_y) // tile_size
+        
+        if player_color == 'black':
+            return 7 - row, 7 - col
         return row, col
     return None, None
 
@@ -329,24 +338,27 @@ def handle_piece_selection(mouse_x, mouse_y):
 def draw_highlights(screen):
     """Draw green highlights for valid moves, red for blocked moves, and purple for capture moves"""
     for row, col in valid_moves:
-        x = board_x + col * tile_size
-        y = board_y + row * tile_size
+        vis_row, vis_col = get_visual_coords(row, col)
+        x = board_x + vis_col * tile_size
+        y = board_y + vis_row * tile_size
         highlight = pygame.Surface((tile_size, tile_size))
         highlight.set_alpha(HIGHLIGHT_ALPHA)
         highlight.fill(GREEN)
         screen.blit(highlight, (x, y))
     
     for row, col in blocked_moves:
-        x = board_x + col * tile_size
-        y = board_y + row * tile_size
+        vis_row, vis_col = get_visual_coords(row, col)
+        x = board_x + vis_col * tile_size
+        y = board_y + vis_row * tile_size
         highlight = pygame.Surface((tile_size, tile_size))
         highlight.set_alpha(HIGHLIGHT_ALPHA)
         highlight.fill(RED)
         screen.blit(highlight, (x, y))
     
     for row, col in capture_moves:
-        x = board_x + col * tile_size
-        y = board_y + row * tile_size
+        vis_row, vis_col = get_visual_coords(row, col)
+        x = board_x + vis_col * tile_size
+        y = board_y + vis_row * tile_size
         highlight = pygame.Surface((tile_size, tile_size))
         highlight.set_alpha(HIGHLIGHT_ALPHA)
         highlight.fill(PURPLE)
@@ -389,13 +401,125 @@ def setupBoard():
 def draw_all_pieces(screen, pieces_list, board_x, board_y, tile_size):
     """Draw all pieces on the board"""
     for piece in pieces_list:
-        x = board_x + piece.col * tile_size
-        y = board_y + piece.row * tile_size
+        vis_row, vis_col = get_visual_coords(piece.row, piece.col)
+        x = board_x + vis_col * tile_size
+        y = board_y + vis_row * tile_size
         piece.draw(screen, x, y, tile_size)
+
+import random
+
+# ... (existing imports and init)
 
 # Game loop
 setupBoard()
 running = True
+game_state = 'MENU' # 'MENU' or 'PLAYING'
+player_color = None # 'white' or 'black'
+ai_color = None
+current_turn = 'white'
+
+def draw_selection_screen(screen):
+    # ... (existing code)
+    screen.fill((50, 50, 50))
+    font = pygame.font.SysFont(None, 48)
+    
+    title_text = font.render("Choose Your Color", True, WHITE)
+    screen.blit(title_text, (screen_width // 2 - title_text.get_width() // 2, screen_height // 4))
+    
+    # Draw White Button
+    white_btn_rect = pygame.Rect(screen_width // 2 - 100, screen_height // 2 - 50, 200, 50)
+    pygame.draw.rect(screen, WHITE, white_btn_rect)
+    white_text = font.render("White", True, BLACK)
+    screen.blit(white_text, (white_btn_rect.centerx - white_text.get_width() // 2, white_btn_rect.centery - white_text.get_height() // 2))
+    
+    # Draw Black Button
+    black_btn_rect = pygame.Rect(screen_width // 2 - 100, screen_height // 2 + 50, 200, 50)
+    pygame.draw.rect(screen, BLACK, black_btn_rect)
+    pygame.draw.rect(screen, WHITE, black_btn_rect, 2) # Outline for visibility
+    black_text = font.render("Black", True, WHITE)
+    screen.blit(black_text, (black_btn_rect.centerx - black_text.get_width() // 2, black_btn_rect.centery - black_text.get_height() // 2))
+    
+    return white_btn_rect, black_btn_rect
+
+def make_ai_move(color):
+    """Make a random valid move for the AI"""
+    global current_turn
+    
+    # Get all pieces for the AI
+    ai_pieces = [p for p in pieces if p.color == color]
+    possible_moves = []
+    
+    for piece in ai_pieces:
+        check_moves(piece)
+        # Add valid moves
+        for move in valid_moves:
+            possible_moves.append((piece, move, 'move'))
+        # Add capture moves
+        for move in capture_moves:
+            possible_moves.append((piece, move, 'capture'))
+            
+    if possible_moves:
+        # Prioritize captures (simple intelligence)
+        captures = [m for m in possible_moves if m[2] == 'capture']
+        if captures:
+            piece, (row, col), move_type = random.choice(captures)
+        else:
+            piece, (row, col), move_type = random.choice(possible_moves)
+            
+        if move_type == 'capture':
+            captured_piece = get_piece_at(row, col)
+            if captured_piece:
+                pieces.remove(captured_piece)
+        
+        move_piece(piece, row, col)
+        
+        # Switch turn
+        current_turn = 'white' if current_turn == 'black' else 'black'
+
+def handle_piece_selection(mouse_x, mouse_y):
+    """Handle clicking on a piece to select it, or moving to a valid square"""
+    global selected_piece, valid_moves, blocked_moves, capture_moves, current_turn
+    
+    # Only allow interaction if it's the player's turn
+    if current_turn != player_color:
+        return
+
+    row, col = get_board_position_from_mouse(mouse_x, mouse_y)
+    
+    if row is not None and col is not None:
+        if selected_piece is not None:
+            if (row, col) in valid_moves:
+                move_piece(selected_piece, row, col)
+                selected_piece = None
+                valid_moves = []
+                blocked_moves = []
+                capture_moves = []
+                current_turn = 'white' if current_turn == 'black' else 'black'
+                return
+            elif (row, col) in capture_moves:
+                captured_piece = get_piece_at(row, col)
+                if captured_piece is not None:
+                    pieces.remove(captured_piece)
+                move_piece(selected_piece, row, col)
+                selected_piece = None
+                valid_moves = []
+                blocked_moves = []
+                capture_moves = []
+                current_turn = 'white' if current_turn == 'black' else 'black'
+                return
+        
+        piece = get_piece_at(row, col)
+        if piece is not None:
+            # Only allow selecting own pieces
+            if piece.color == player_color:
+                selected_piece = piece
+                check_moves(selected_piece)
+        else:
+            selected_piece = None
+            valid_moves = []
+            blocked_moves = []
+            capture_moves = []
+
 while running:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -403,28 +527,60 @@ while running:
         elif event.type == pygame.MOUSEBUTTONDOWN:
             if event.button == 1:
                 mouse_x, mouse_y = event.pos
-                handle_piece_selection(mouse_x, mouse_y)
+                
+                if game_state == 'MENU':
+                    # Re-calculate rects to check collision (simple way)
+                    white_btn_rect = pygame.Rect(screen_width // 2 - 100, screen_height // 2 - 50, 200, 50)
+                    black_btn_rect = pygame.Rect(screen_width // 2 - 100, screen_height // 2 + 50, 200, 50)
+                    
+                    if white_btn_rect.collidepoint(mouse_x, mouse_y):
+                        player_color = 'white'
+                        ai_color = 'black'
+                        game_state = 'PLAYING'
+                    elif black_btn_rect.collidepoint(mouse_x, mouse_y):
+                        player_color = 'black'
+                        ai_color = 'white'
+                        game_state = 'PLAYING'
+                    
+                    current_turn = 'white' # White always starts
+                
+                elif game_state == 'PLAYING':
+                    handle_piece_selection(mouse_x, mouse_y)
 
-    screen.fill((50, 50, 50))
+    if game_state == 'MENU':
+        draw_selection_screen(screen)
+    
+    elif game_state == 'PLAYING':
+        # AI Turn
+        if current_turn == ai_color:
+            pygame.time.wait(500) # Small delay for better UX
+            make_ai_move(ai_color)
 
-    # Draw chess board
-    for row in range(board_size):
-        for col in range(board_size):
-            if (row + col) % 2 == 0:
-                tile_color = WHITE
-            else:
-                tile_color = BLACK
-            
-            x = board_x + col * tile_size
-            y = board_y + row * tile_size
-            pygame.draw.rect(screen, tile_color, (x, y, tile_size, tile_size))
+        screen.fill((50, 50, 50))
 
-    # Draw highlights
-    if selected_piece is not None:
-        draw_highlights(screen)
+        # Draw chess board
+        for row in range(board_size):
+            for col in range(board_size):
+                # Determine visual position
+                vis_row, vis_col = get_visual_coords(row, col)
+                
+                # Check color based on logical position (checkerboard pattern is consistent)
+                if (row + col) % 2 == 0:
+                    tile_color = WHITE
+                else:
+                    tile_color = BLACK
+                
+                # Draw at visual position
+                x = board_x + vis_col * tile_size
+                y = board_y + vis_row * tile_size
+                pygame.draw.rect(screen, tile_color, (x, y, tile_size, tile_size))
 
-    # Draw all pieces
-    draw_all_pieces(screen, pieces, board_x, board_y, tile_size)
+        # Draw highlights
+        if selected_piece is not None:
+            draw_highlights(screen)
+
+        # Draw all pieces
+        draw_all_pieces(screen, pieces, board_x, board_y, tile_size)
 
     pygame.display.flip()
 
